@@ -1,0 +1,1 @@
+Podaci preuzeti sa https://www.kaggle.com/datasets/artyomkruglov/gaming-profiles-2025-steam-playstation-xbox
