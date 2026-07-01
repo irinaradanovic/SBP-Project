@@ -1,10 +1,10 @@
 from clean_utils import parse_date, parse_list
-from pymongo import MongoClient, UpdateOne, InsertOne
+from pymongo import MongoClient, InsertOne, UpdateOne
 import pandas as pd
 import os
+import time
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
-
 
 client = MongoClient("mongodb://localhost:27017/")
 db = client["playstation_ecosystem"]
@@ -12,7 +12,7 @@ db = client["playstation_ecosystem"]
 def import_games_and_achievements():
     print("Faza 1: Igre i dostignuća")
     games_collection = db["games"]
-    games_collection.drop() # resetuj kolekciju ako postoji
+    games_collection.drop()
     
     print("Ucitavanje games.csv...")
     games_df = pd.read_csv(os.path.join(DATA_DIR, 'games.csv'))
@@ -30,14 +30,12 @@ def import_games_and_achievements():
         rel_date = parse_date(row['release_date'])
         if rel_date: doc['release_date'] = rel_date
         
-        # Inicijalizujemo prazne liste za achievements
         doc['achievements'] = []
         games_docs.append(doc)
         
     if games_docs:
         games_collection.insert_many(games_docs)
         print(f"Uvezeno {len(games_docs)} igara.")
-
 
     print("Ucitavanje achievements.csv i ugnjezdenje u igre...")
     ach_df = pd.read_csv(os.path.join(DATA_DIR, 'achievements.csv'))
@@ -49,7 +47,6 @@ def import_games_and_achievements():
         if not pd.isna(row['description']): ach_obj['description'] = row['description']
         if not pd.isna(row['rarity']): ach_obj['rarity'] = row['rarity']
         
-        # Ubacujemo achievement u odgovarajuću igru koristeći $push
         bulk_updates.append(UpdateOne(
             {"_id": str(row['gameid'])},
             {"$push": {"achievements": ach_obj}}
@@ -65,89 +62,81 @@ def import_games_and_achievements():
 
 
 def import_players_and_history():
-    print("\nFaza 2: Igraci i istorija dostignuca")
+    print("\nFaza 2: Igrači i Istorija")
     players_collection = db["players"]
+    history_collection = db["player_history"]
+    
     players_collection.drop()
+    history_collection.drop()
     
-    print("Ucitavanje players.csv...")
+    print("Učitavanje i uvoz igrača...")
     players_df = pd.read_csv(os.path.join(DATA_DIR, 'players.csv'))
-    
     players_docs = []
     for _, row in players_df.iterrows():
         doc = {"_id": str(row['playerid'])}
         if not pd.isna(row['nickname']): doc['nickname'] = row['nickname']
         if not pd.isna(row['country']): doc['country'] = row['country']
-        
         doc['purchased_games'] = []
-        doc['earned_achievements'] = []
         players_docs.append(doc)
-        
+    
     if players_docs:
         players_collection.insert_many(players_docs)
-        print(f"Uvezeno {len(players_docs)} igrača.")
+    print(f"Uvezeno {len(players_docs)} igrača.")
+    del players_df
+    del players_docs
 
-
-    print("Ucitavanje purchased_games.csv...")
+    # Dodavanje kupljenih igara igračima
+    print("\nDodavanje kupljenih igara igračima...")
     pur_df = pd.read_csv(os.path.join(DATA_DIR, 'purchased_games.csv'))
-    
     bulk_updates = []
     for _, row in pur_df.iterrows():
         games_list = parse_list(row['library'])
         if games_list:
-            games_list_str = [str(g) for g in games_list]
             bulk_updates.append(UpdateOne(
                 {"_id": str(row['playerid'])},
-                {"$set": {"purchased_games": games_list_str}}
+                {"$set": {"purchased_games": [str(g) for g in games_list]}}
             ))
-            
         if len(bulk_updates) >= 20000:
             players_collection.bulk_write(bulk_updates)
             bulk_updates = []
-            
     if bulk_updates:
         players_collection.bulk_write(bulk_updates)
-    print("Biblioteke kupljenih igara uspešno dodate igračima.")
+    print("Biblioteke kupljenih igara uspešno dodate.")
+    del pur_df
 
 
-    #Kreiranje mape iz achievements.csv za dobavljanje gameid podatka
-    print("Kreiranje mape dostignuća i pripadajućih igara iz achievements.csv...")
-    ach_map_df = pd.read_csv(os.path.join(DATA_DIR, 'achievements.csv'), usecols=['achievementid', 'gameid'])
-    ach_to_game_map = dict(zip(ach_map_df['achievementid'].astype(str), ach_map_df['gameid'].astype(str)))
-    del ach_map_df # Oslobađamo memoriju
-
-    print("Ucitavanje history.csv...")
+    print("\nUvoženje istorije dostignuća u posebnu kolekciju 'player_history'...")
     chunk_size = 50000
     chunk_count = 0
     
     for chunk in pd.read_csv(os.path.join(DATA_DIR, 'history.csv'), chunksize=chunk_size):
-        bulk_updates = []
+        bulk_inserts = []
         for _, row in chunk.iterrows():
             ach_id = str(row['achievementid'])
-            game_id = ach_to_game_map.get(ach_id)
+            # Achievemnt id sadrži game_id kao prefiks, pa ga izdvajamo
+            game_id = ach_id.split('_')[0]
             
-            earned_obj = {
+            doc = {
+                "playerid": str(row['playerid']),
                 "achievementid": ach_id
             }
-            # Dodajemo gameid samo ako smo ga uspešno locirali u mapi
-            if game_id:
-                earned_obj["gameid"] = game_id
+            if game_id: 
+                doc["gameid"] = game_id
                 
             acq_date = parse_date(row['date_acquired'])
             if acq_date: 
-                earned_obj['date_acquired'] = acq_date
+                doc['date_acquired'] = acq_date
+                
+            bulk_inserts.append(InsertOne(doc))
             
-            bulk_updates.append(UpdateOne(
-                {"_id": str(row['playerid'])},
-                {"$push": {"earned_achievements": earned_obj}}
-            ))
-            
-        if bulk_updates:
-            players_collection.bulk_write(bulk_updates)
+        if bulk_inserts:
+            history_collection.bulk_write(bulk_inserts, ordered=False)
             
         chunk_count += 1
-        print(f"Obrađeno {chunk_count * chunk_size} redova iz history.csv...")
+        print(f"Uspešno upisano {chunk_count * chunk_size} redova u bazu...")
+        time.sleep(0.3)
         
-    print("Istorija zarađenih dostignuća uspešno ugnježđena u igrače.")
+    print("Kolekcija 'player_history' je uspešno kreirana i napunjena!")
 
 
 def import_price_history():
@@ -155,13 +144,12 @@ def import_price_history():
     price_collection = db["price_history"]
     price_collection.drop()
     
-    print("UUcitavanje prices.csv...")
+    print("Ucitavanje prices.csv...")
     prices_df = pd.read_csv(os.path.join(DATA_DIR, 'prices.csv'))
     
     price_docs = []
     for _, row in prices_df.iterrows():
         doc = {"gameid": str(row['gameid'])}
-        
         for curr in ['usd', 'eur', 'gbp', 'jpy', 'rub']:
             if not pd.isna(row[curr]): 
                 doc[curr] = float(row[curr])
@@ -170,7 +158,6 @@ def import_price_history():
         if acq_date: doc['date_acquired'] = acq_date
         
         price_docs.append(InsertOne(doc))
-        
         if len(price_docs) >= 20000:
             price_collection.bulk_write(price_docs)
             price_docs = []
