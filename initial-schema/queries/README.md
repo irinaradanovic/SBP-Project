@@ -1,6 +1,6 @@
 # Upiti
 
-# 1. Kako se kroz godine menja prosečno vreme koje prođe od izlaska igre do trenutka kada prvi igrač na svetu osvoji neki trofej?
+# 1. Kako se kroz godine menja prosečno vreme koje prođe od izlaska igre do trenutka kada prvi igrač na svetu osvoji neki trofej?-28.9s
 
 ```javascript
 db.player_history.aggregate([
@@ -49,11 +49,11 @@ db.player_history.aggregate([
 ```
 
 ![Screenshot](upit1.png)
-Većina vremena odlazi na skeniranje i grupisanje po igrama, potrben indeks nad tom kolonom.
+Većina vremena odlazi na skeniranje i grupisanje po igrama, potreban indeks nad tom kolonom.
 
 ---
 
-# 2. Koliki je procenat igrača koji su imali 100% completion rate za svaku igricu? (Top 20 igara)
+# 2. Koliki je procenat igrača koji su imali 100% completion rate za svaku igricu? (Top 20 igara)-83s
 
 ```javascript
 db.player_history.aggregate([
@@ -100,25 +100,31 @@ db.player_history.aggregate([
       }
     }
   },
-  { $sort: { total_active_players: -1 } }, 
+  { $sort: { completion_rate_percentage: -1, total_active_players:-1 } },
   { $limit: 20 }
 ])
 ```
 
 ![Screenshot](upit2.png)
-Najveći trošak(oko 60s) troši `$lookup` koji za milion pojedinačnih pretraga pretražuje naziv igre i trofeja.
-Moguće rešenje je denormalizovana šema. Za grupisanje i skeniranje kompozitni indeks za gameid i playerid.
+Najveći trošak(oko 60s) je `$lookup` koji za milion pojedinačnih pretraga pretražuje naziv igre i trofeja.
+Moguće rešenje je denormalizovana šema. Za grupisanje i skeniranje kompozitni indeks.
 
 ---
 
-# 3. Koji žanrovi igara privlače najveći prosečan broj igrača po pojedinačnoj igri, kolika je njihova prosečna cena u USD?
+# 3. Koji žanrovi igara privlače najveći prosečan broj igrača po pojedinačnoj igri, kolika je njihova prosečna cena u USD?-1057s
 
 ```javascript
 db.player_history.aggregate([
   {
     $group: {
       _id: "$gameid",
-      broj_igraca: { $sum: 1 }
+      jedinstveni_igraci: { $addToSet: "$playerid" }
+    }
+  },
+  {
+    $project: {
+      _id: 1,
+      broj_igraca: { $size: "$jedinstveni_igraci" }
     }
   },
 
@@ -164,17 +170,18 @@ db.player_history.aggregate([
                 prosecan_broj_igraca: { $round: ["$prosecan_broj_igraca", 0] }, 
                 prosecna_cena_usd: { $round: ["$prosecna_cena_usd", 2] } 
     }
+  }
 ])
 
 
 ```
 
 ![Screenshot](upit3.png)
-Nakon prvog grupisanja, baza je dobila 23.025 jedinstvenih igara. Za svaku od tih igara, MongoDB je morao da ode u kolekciju prices i pretraži je (1. lookup) i da ode u kolekciju games i pretraži je (2. lookup).
+Nakon prvog grupisanja, baza je dobila 23.025 jedinstvenih igara. Za svaku od tih igara, MongoDB je morao da ode u kolekciju prices i pretraži je (1. lookup) i da ode u kolekciju games i pretraži je (2. lookup). Moguće rešenje je denormalizovana schema za igre koja sadrži i agregacije poput ukupan broj igrača.
 
 ---
 
-# 4. Iz kojih država dolaze najuspešniji igrači na platformi? Izdvojiti top 10 država sa najvećim ukupnim brojem osvojenih "Platinum" trofeja u 2024. godini.
+# 4. Iz kojih država dolaze najuspešniji igrači na platformi? Izdvojiti top 10 država sa najvećim ukupnim brojem osvojenih "Platinum" trofeja u 2024. godini.-263s
 
 ```javascript
 db.player_history.aggregate([
@@ -238,12 +245,12 @@ db.player_history.aggregate([
 
 ![Screenshot](upit4.png)
 Pošto polje `date_acquired` nema indeks, MongoDB je morao da podigne sa diska i pretraži svaki pojedinačni dokument od ukupno 19.5 miliona u kolekciji `player_history`. Potom je izdvojio 1.416.800 dokumenata koji pripadaju 2024. godini. Ovde je izgubljeno prvih 20 sekundi.
-Oko 90% vremena: $lookup i $unwind faza bez indeksa nad 1.4 miliona dokumenata su doveli do sporog izvršavanja.
-Dalji planČ indeksiranje i denormalizacija.
+Oko 90% vremena: $lookup i $unwind faza nad 1.4 miliona dokumenata su doveli do sporog izvršavanja.
+Dalji plan indeksiranje i denormalizacija, sama istorija bi trebala da ima neke informacije o trofeju, poput njenog `rarity` i da nad tim poljem i datumom napravimo kompozitni indeks.
 
 ---
 
-# 5. Da li su igrači kroz godine(2021-2024) postali "lovci na trofeje"? Odnosno, da li se broj osvojenih teških trofeja povećava kako se platforma razvija?
+# 5. Da li su igrači kroz godine(2021-2024) postali "lovci na trofeje"? Odnosno, da li se broj osvojenih teških trofeja povećava kako se platforma razvija?-634s
 
 ```javascript
 db.player_history.aggregate([
@@ -291,4 +298,4 @@ db.player_history.aggregate([
 ```
 
 ![Screenshot](upit5.png)
-Glavno usko grlo (preko 95% vremena) ostaje operacija $lookup i $unwind
+Glavno usko grlo (preko 95% vremena) ostaje operacija $lookup.
