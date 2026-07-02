@@ -141,11 +141,15 @@ def import_players_and_history():
 
 def import_price_history():
     print("\nFaza 3: Istorija cena")
-    price_collection = db["price_history"]
+    price_collection = db["prices"]
     price_collection.drop()
     
     print("Ucitavanje prices.csv...")
     prices_df = pd.read_csv(os.path.join(DATA_DIR, 'prices.csv'))
+    
+    print(f"Ukupno redova u CSV-u pre čišćenja: {len(prices_df)}")
+    prices_df = prices_df.drop_duplicates(subset=['gameid'], keep='first')
+    print(f"Ukupno jedinstvenih igara nakon čišćenja: {len(prices_df)}")
     
     price_docs = []
     for _, row in prices_df.iterrows():
@@ -164,7 +168,6 @@ def import_price_history():
             
     if price_docs:
         price_collection.bulk_write(price_docs)
-    print("Kolekcija 'price_history' uspešno napunjena.")
 
 
 if __name__ == "__main__":
