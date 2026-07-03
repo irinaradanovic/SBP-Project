@@ -30,7 +30,7 @@ Prva šema se nalazi u okviru `initial-schema` direktorijuma. Druga, optimizovan
 Oba direktorijuma imaju u sebi `scripts` folder sa skriptama za punjenje baze. Potom, `schema` folder sa opisom šeme. I `queries` sa prikazom upita i rezultatima performanse.
 
 # Rezultati upita
-Vizualizacija rezultata upita uz korišćenje alata *Metabase-u* `dashboard` direktorijumu
+Vizualizacija rezultata upita uz korišćenje alata *Metabase* - u`dashboard` direktorijumu
 
 # Rezultat optimizacije
 Procena performansi izvršena je pomoću metode explain("executionStats") koju nudi MongoDB. Mereno je vreme izvršavanja, kao i broj dokumenata na ulazu u upit.
