@@ -1,4 +1,4 @@
-# Vizualizacija rezultata upita uz korišćenje alata *Metabase-u*
+# Vizualizacija rezultata upita uz korišćenje alata *Metabase*
 
 ![Screenshot](upit1.png)
 ![Screenshot](upit2.png)
