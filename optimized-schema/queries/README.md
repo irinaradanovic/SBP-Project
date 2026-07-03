@@ -56,7 +56,14 @@ db.player_history_opt.aggregate([
       average_days: { $avg: "$days_to_first" }
     }
   },
-  { $sort: { _id: 1 } }
+  { $sort: { _id: 1 } },
+  {
+    "$project": {
+      "_id": 0,
+      "release_year": "$_id",
+      "average_days": 1
+    }
+  }
 ])
 
 ```
